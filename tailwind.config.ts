@@ -17,6 +17,9 @@ export default {
 				'2xl': '1400px'
 			}
 		},
+		fontFamily: {
+			sans: ['Roboto', 'system-ui', 'sans-serif'],
+		},
 		extend: {
 			colors: {
 				border: 'hsl(var(--border))',
@@ -25,12 +28,18 @@ export default {
 				background: 'hsl(var(--background))',
 				foreground: 'hsl(var(--foreground))',
 				primary: {
-					DEFAULT: 'hsl(var(--primary))',
-					foreground: 'hsl(var(--primary-foreground))'
+					DEFAULT: '#0088CC',
+					foreground: '#FFFFFF'
 				},
 				secondary: {
-					DEFAULT: 'hsl(var(--secondary))',
-					foreground: 'hsl(var(--secondary-foreground))'
+					DEFAULT: '#5BB5E5',
+					foreground: '#FFFFFF'
+				},
+				telegram: {
+					blue: '#0088CC',
+					lightBlue: '#5BB5E5',
+					gray: '#F5F5F5',
+					darkGray: '#212121',
 				},
 				destructive: {
 					DEFAULT: 'hsl(var(--destructive))',
