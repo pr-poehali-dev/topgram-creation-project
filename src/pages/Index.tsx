@@ -77,7 +77,7 @@ const Index = () => {
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
   
   // Данные
-  const [users] = useState<User[]>(ALL_USERS);
+  const [users, setUsers] = useState<User[]>(ALL_USERS);
   const [chats, setChats] = useState<Chat[]>([]);
   
   // Состояние регистрации
@@ -178,6 +178,8 @@ const Index = () => {
       isOnline: true,
     };
     
+    // Добавляем нового пользователя в общий список
+    setUsers(prev => [...prev, newUser]);
     setCurrentUser(newUser);
     setCurrentView('main');
   };
@@ -542,7 +544,7 @@ const Index = () => {
                         {filteredUsers.length > 0 ? (
                           <div className="space-y-2">
                             <p className={`text-sm mb-3 px-2 ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-                              {searchQuery ? `Результаты поиска:` : 'Все пользователи:'}
+                              {searchQuery ? `Результаты поиска (${filteredUsers.length}):` : `Все пользователи (${filteredUsers.length}):`}
                             </p>
                             {filteredUsers.map(user => (
                               <div key={user.id} className={`flex items-center justify-between p-2 hover:bg-gray-50 rounded transition-colors ${isDarkMode ? 'hover:bg-gray-700' : ''}`}>
