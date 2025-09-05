@@ -176,6 +176,7 @@ const Index = () => {
     setSelectedChatId(chatId);
     setShowAddContact(false);
     setShowMobileSidebar(false);
+    setSearchQuery(''); // Сбрасываем поиск
   };
 
   const handleSendMessage = (e: React.FormEvent) => {
@@ -196,11 +197,18 @@ const Index = () => {
     if (!searchQuery) return true;
     
     const query = searchQuery.toLowerCase();
-    return (
+    const matches = (
       user.name.toLowerCase().includes(query) ||
       user.username.toLowerCase().includes(query) ||
       user.phone.includes(query)
     );
+    
+    // Отладочная информация
+    if (searchQuery) {
+      console.log(`Поиск "${query}": пользователь ${user.username} (${user.name}) - ${matches ? 'найден' : 'не найден'}`);
+    }
+    
+    return matches;
   });
 
   const getOtherParticipant = (chat: StoreChat): StoreUser | undefined => {
@@ -374,7 +382,10 @@ const Index = () => {
                 Чаты
               </h1>
               <div className="flex items-center gap-2">
-                <Dialog open={showAddContact} onOpenChange={setShowAddContact}>
+                <Dialog open={showAddContact} onOpenChange={(open) => {
+                  setShowAddContact(open);
+                  if (!open) setSearchQuery(''); // Сбрасываем поиск при закрытии
+                }}>
                   <DialogTrigger asChild>
                     <Button size="sm" variant="outline">
                       <Icon name="UserPlus" size={16} />
@@ -393,11 +404,12 @@ const Index = () => {
                         autoFocus
                       />
                       <ScrollArea className="max-h-60">
+                        <div className="space-y-2">
+                          <p className={`text-sm mb-3 px-2 ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                            {searchQuery ? `Поиск "${searchQuery}" (${filteredUsers.length} из ${users.length}):` : `Все пользователи (${filteredUsers.length} из ${users.length}):`}
+                          </p>
                         {filteredUsers.length > 0 ? (
                           <div className="space-y-2">
-                            <p className={`text-sm mb-3 px-2 ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-                              {searchQuery ? `Результаты поиска (${filteredUsers.length}):` : `Все пользователи (${filteredUsers.length}):`}
-                            </p>
                             {filteredUsers.map((user) => (
                               <div
                                 key={user.id}
