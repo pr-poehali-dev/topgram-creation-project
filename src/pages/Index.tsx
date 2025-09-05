@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -10,75 +10,29 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Switch } from '@/components/ui/switch';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
 import Icon from '@/components/ui/icon';
-
-interface User {
-  id: string;
-  username: string;
-  phone: string;
-  name: string;
-  isOnline: boolean;
-  avatar?: string;
-}
-
-interface Message {
-  id: string;
-  text?: string;
-  sender: string;
-  timestamp: Date;
-  isOwn: boolean;
-  type: 'text' | 'image' | 'file';
-  fileUrl?: string;
-  fileName?: string;
-}
-
-interface Chat {
-  id: string;
-  participantId: string;
-  name: string;
-  username: string;
-  lastMessage: string;
-  timestamp: string;
-  unreadCount: number;
-  isGroup: boolean;
-  messages: Message[];
-}
-
-// Статические данные пользователей
-const ALL_USERS: User[] = [
-  {
-    id: '1',
-    username: 'alice_dev',
-    phone: '+71234567890',
-    name: 'Алиса Разработчица',
-    isOnline: true,
-  },
-  {
-    id: '2',
-    username: 'bob_designer',
-    phone: '+71234567891',
-    name: 'Боб Дизайнер',
-    isOnline: false,
-  },
-  {
-    id: '3',
-    username: 'charlie_pm',
-    phone: '+71234567892',
-    name: 'Чарли Менеджер',
-    isOnline: true,
-  }
-];
+import { useRealtimeStore, User as StoreUser, Chat as StoreChat } from '@/store/realtime';
 
 const Index = () => {
-  // Основные состояния
+  // Состояния из глобального стора
+  const {
+    users,
+    currentUser,
+    chats,
+    addUser,
+    setCurrentUser,
+    createChat,
+    addMessage,
+    markMessagesAsRead,
+    findUserById,
+    getChatByParticipants,
+    updateUserStatus
+  } = useRealtimeStore();
+
+  // Локальные состояния UI
   const [currentView, setCurrentView] = useState<'auth' | 'main'>('auth');
-  const [currentUser, setCurrentUser] = useState<User | null>(null);
-  const [selectedChat, setSelectedChat] = useState<string | null>(null);
+  const [selectedChatId, setSelectedChatId] = useState<string | null>(null);
   const [isDarkMode, setIsDarkMode] = useState(false);
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
-  
-  // Данные
-  const [users, setUsers] = useState<User[]>(ALL_USERS);
-  const [chats, setChats] = useState<Chat[]>([]);
   
   // Состояние регистрации
   const [authStep, setAuthStep] = useState<'phone' | 'password' | 'register'>('phone');
@@ -102,7 +56,7 @@ const Index = () => {
   const validateUsername = (username: string) => /^[a-zA-Z0-9_]{3,20}$/.test(username);
 
   // Изменение размера окна
-  React.useEffect(() => {
+  useEffect(() => {
     const handleResize = () => {
       const mobile = window.innerWidth < 768;
       setIsMobile(mobile);
@@ -115,62 +69,70 @@ const Index = () => {
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  // Аутентификация
-  const handleAuth = () => {
-    setAuthError('');
-
-    if (authStep === 'phone') {
-      if (!validatePhone(phone)) {
-        setAuthError('Введите номер телефона в формате +7XXXXXXXXXX');
-        return;
-      }
+  // Установка статуса онлайн для текущего пользователя
+  useEffect(() => {
+    if (currentUser) {
+      updateUserStatus(currentUser.id, true);
       
-      const existingUser = users.find(u => u.phone === phone);
-      if (existingUser) {
-        setAuthStep('password');
-      } else {
-        setAuthStep('register');
-      }
-    } else if (authStep === 'password') {
-      const user = users.find(u => u.phone === phone);
-      if (user && password === 'password123') {
-        setCurrentUser(user);
-        setCurrentView('main');
-      } else {
-        setAuthError('Неверный пароль');
-      }
+      return () => {
+        updateUserStatus(currentUser.id, false);
+      };
+    }
+  }, [currentUser, updateUserStatus]);
+
+  // Аутентификация
+  const handlePhoneSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    setAuthError('');
+    
+    if (!validatePhone(phone)) {
+      setAuthError('Неверный формат номера телефона. Используйте +7XXXXXXXXXX');
+      return;
+    }
+
+    // Проверяем, зарегистрирован ли пользователь
+    const existingUser = users.find(u => u.phone === phone);
+    if (existingUser) {
+      setAuthStep('password');
+    } else {
+      setAuthStep('register');
     }
   };
 
-  const handleRegister = () => {
+  const handleLogin = (e: React.FormEvent) => {
+    e.preventDefault();
     setAuthError('');
-
-    if (!name.trim()) {
-      setAuthError('Введите ваше имя');
-      return;
+    
+    const user = users.find(u => u.phone === phone);
+    if (user) {
+      setCurrentUser(user);
+      setCurrentView('main');
+      resetAuth();
+    } else {
+      setAuthError('Неверный пароль');
     }
+  };
+
+  const handleRegister = (e: React.FormEvent) => {
+    e.preventDefault();
+    setAuthError('');
     
     if (!validateUsername(username)) {
       setAuthError('Username должен содержать 3-20 символов (буквы, цифры, _)');
       return;
     }
-    
+
     if (users.some(u => u.username === username)) {
       setAuthError('Пользователь с таким username уже существует');
       return;
     }
-    
-    if (!validatePhone(phone)) {
-      setAuthError('Введите номер телефона в формате +7XXXXXXXXXX');
-      return;
-    }
-    
-    if (password.length < 6) {
-      setAuthError('Пароль должен содержать не менее 6 символов');
+
+    if (name.length < 2) {
+      setAuthError('Имя должно содержать минимум 2 символа');
       return;
     }
 
-    const newUser: User = {
+    const newUser: StoreUser = {
       id: Date.now().toString(),
       username,
       phone,
@@ -178,277 +140,220 @@ const Index = () => {
       isOnline: true,
     };
     
-    // Добавляем нового пользователя в общий список
-    setUsers(prev => [...prev, newUser]);
+    addUser(newUser);
     setCurrentUser(newUser);
     setCurrentView('main');
+    resetAuth();
   };
 
-  // Создание чата
-  const startChat = (user: User) => {
-    const existingChat = chats.find(chat => chat.participantId === user.id);
-    
-    if (existingChat) {
-      setSelectedChat(existingChat.id);
-    } else {
-      const newChat: Chat = {
-        id: Date.now().toString(),
-        participantId: user.id,
-        name: user.name,
-        username: user.username,
-        lastMessage: '',
-        timestamp: 'сейчас',
-        unreadCount: 0,
-        isGroup: false,
-        messages: [],
-      };
-      
-      setChats(prev => [...prev, newChat]);
-      setSelectedChat(newChat.id);
-    }
-    
-    setShowAddContact(false);
-    setSearchQuery('');
-    if (isMobile) {
-      setShowMobileSidebar(false);
-    }
-  };
-
-  // Отправка сообщения
-  const sendMessage = () => {
-    if (!messageText.trim() || !selectedChat) return;
-
-    const message = messageText.trim();
-    const newMessage: Message = {
-      id: Date.now().toString(),
-      text: message,
-      sender: currentUser?.name || 'Я',
-      timestamp: new Date(),
-      isOwn: true,
-      type: 'text',
-    };
-
-    setChats(prev => prev.map(chat => {
-      if (chat.id === selectedChat) {
-        return {
-          ...chat,
-          messages: [...chat.messages, newMessage],
-          lastMessage: message,
-          timestamp: 'сейчас',
-        };
-      }
-      return chat;
-    }));
-
-    setMessageText('');
-  };
-
-  // Обработка Enter
-  const handleKeyPress = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter') {
-      sendMessage();
-    }
-  };
-
-  // Загрузка файла
-  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file || !selectedChat) return;
-
-    const isImage = file.type.startsWith('image/');
-    const fileUrl = URL.createObjectURL(file);
-
-    const newMessage: Message = {
-      id: Date.now().toString(),
-      sender: currentUser?.name || 'Я',
-      timestamp: new Date(),
-      isOwn: true,
-      type: isImage ? 'image' : 'file',
-      fileUrl,
-      fileName: file.name,
-      text: isImage ? '' : file.name,
-    };
-
-    setChats(prev => prev.map(chat => {
-      if (chat.id === selectedChat) {
-        return {
-          ...chat,
-          messages: [...chat.messages, newMessage],
-          lastMessage: isImage ? '📷 Фото' : `📎 ${file.name}`,
-          timestamp: 'сейчас',
-        };
-      }
-      return chat;
-    }));
-
-    if (fileInputRef.current) {
-      fileInputRef.current.value = '';
-    }
+  const resetAuth = () => {
+    setPhone('');
+    setPassword('');
+    setUsername('');
+    setName('');
+    setAuthError('');
+    setAuthStep('phone');
   };
 
   const handleLogout = () => {
-    setCurrentView('auth');
+    if (currentUser) {
+      updateUserStatus(currentUser.id, false);
+    }
     setCurrentUser(null);
-    setChats([]);
-    setSelectedChat(null);
+    setCurrentView('auth');
+    setSelectedChatId(null);
     setShowSettings(false);
+    resetAuth();
+  };
+
+  // Работа с чатами
+  const selectedChat = selectedChatId ? chats.find(c => c.id === selectedChatId) : null;
+  
+  const handleStartChat = (userId: string) => {
+    if (!currentUser) return;
+    
+    const chatId = createChat(currentUser.id, userId);
+    setSelectedChatId(chatId);
+    setShowAddContact(false);
     setShowMobileSidebar(false);
   };
 
-  const toggleTheme = () => {
-    setIsDarkMode(prev => !prev);
-    document.documentElement.classList.toggle('dark');
+  const handleSendMessage = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!messageText.trim() || !selectedChatId || !currentUser) return;
+
+    addMessage(selectedChatId, {
+      text: messageText,
+      senderId: currentUser.id
+    });
+    
+    setMessageText('');
   };
 
-  // Фильтрация пользователей
-  const filteredUsers = searchQuery 
-    ? users.filter(user => 
-        user.id !== currentUser?.id &&
-        (user.username.toLowerCase().includes(searchQuery.toLowerCase()) ||
-         user.name.toLowerCase().includes(searchQuery.toLowerCase()))
-      )
-    : users.filter(user => user.id !== currentUser?.id);
+  // Фильтрация пользователей (только зарегистрированные, исключая текущего)
+  const filteredUsers = users.filter(user => {
+    if (user.id === currentUser?.id) return false;
+    if (!searchQuery) return true;
+    
+    const query = searchQuery.toLowerCase();
+    return (
+      user.name.toLowerCase().includes(query) ||
+      user.username.toLowerCase().includes(query) ||
+      user.phone.includes(query)
+    );
+  });
 
-  const themeClasses = isDarkMode 
-    ? 'dark bg-gray-900 text-white' 
-    : 'bg-white text-gray-900';
+  const getOtherParticipant = (chat: StoreChat): StoreUser | undefined => {
+    if (!currentUser) return undefined;
+    const otherUserId = chat.participants.find(id => id !== currentUser.id);
+    return otherUserId ? findUserById(otherUserId) : undefined;
+  };
 
-  // Экран авторизации
+  const formatTime = (date: Date) => {
+    return new Intl.DateTimeFormat('ru-RU', {
+      hour: '2-digit',
+      minute: '2-digit'
+    }).format(date);
+  };
+
+  const formatLastSeen = (date?: Date) => {
+    if (!date) return '';
+    const now = new Date();
+    const diff = now.getTime() - date.getTime();
+    const minutes = Math.floor(diff / 60000);
+    
+    if (minutes < 1) return 'только что';
+    if (minutes < 60) return `${minutes} мин назад`;
+    if (minutes < 1440) return `${Math.floor(minutes / 60)} ч назад`;
+    return date.toLocaleDateString('ru-RU');
+  };
+
+  // Компонент аутентификации
   if (currentView === 'auth') {
     return (
-      <div className={`min-h-screen bg-gradient-to-br from-telegram-blue to-telegram-lightBlue flex items-center justify-center p-4 ${themeClasses}`}>
-        <Card className={`w-full max-w-md ${isDarkMode ? 'bg-gray-800 border-gray-700' : 'bg-white'}`}>
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-gray-900 dark:to-gray-800 flex items-center justify-center p-4">
+        <Card className="w-full max-w-md">
           <CardHeader className="text-center">
-            <div className="mx-auto mb-4 w-20 h-20 bg-telegram-blue rounded-full flex items-center justify-center">
-              <Icon name="MessageCircle" size={40} className="text-white" />
-            </div>
-            <CardTitle className={`text-2xl font-bold ${isDarkMode ? 'text-white' : 'text-telegram-darkGray'}`}>
-              Topgram
+            <CardTitle className="text-2xl font-bold text-gray-900 dark:text-gray-100">
+              Realtime Chat
             </CardTitle>
-            <p className={isDarkMode ? 'text-gray-300' : 'text-gray-600'}>
-              Современный мессенджер
+            <p className="text-gray-600 dark:text-gray-400">
+              Войдите или зарегистрируйтесь
             </p>
           </CardHeader>
-          <CardContent className="space-y-4">
-            {authError && (
-              <Alert className="border-red-200 bg-red-50">
-                <Icon name="AlertCircle" size={16} className="text-red-600" />
-                <AlertDescription className="text-red-600">{authError}</AlertDescription>
-              </Alert>
-            )}
-
+          <CardContent>
             {authStep === 'phone' && (
-              <>
+              <form onSubmit={handlePhoneSubmit} className="space-y-4">
                 <div>
-                  <label className={`block text-sm font-medium mb-2 ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>
-                    Номер телефона
-                  </label>
+                  <label className="block text-sm font-medium mb-2">Номер телефона</label>
                   <Input
                     type="tel"
-                    placeholder="+71234567890"
                     value={phone}
                     onChange={(e) => setPhone(e.target.value)}
-                    className={`w-full ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white' : ''}`}
+                    placeholder="+71234567890"
+                    className="w-full"
+                    required
                   />
-                  <p className={`text-xs mt-1 ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-                    Тестовые номера: +71234567890, +71234567891, +71234567892
-                  </p>
                 </div>
-                <Button onClick={handleAuth} className="w-full bg-telegram-blue hover:bg-telegram-blue/90">
+                {authError && (
+                  <Alert variant="destructive">
+                    <AlertDescription>{authError}</AlertDescription>
+                  </Alert>
+                )}
+                <Button type="submit" className="w-full">
                   Продолжить
                 </Button>
-              </>
+              </form>
             )}
 
             {authStep === 'password' && (
-              <>
+              <form onSubmit={handleLogin} className="space-y-4">
                 <div>
-                  <label className={`block text-sm font-medium mb-2 ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>
-                    Пароль
-                  </label>
+                  <label className="block text-sm font-medium mb-2">Пароль</label>
                   <Input
                     type="password"
-                    placeholder="Введите пароль"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
-                    className={`w-full ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white' : ''}`}
+                    placeholder="Введите пароль"
+                    className="w-full"
+                    required
                   />
-                  <p className={`text-xs mt-1 ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-                    Демо-пароль: password123
-                  </p>
                 </div>
-                <Button onClick={handleAuth} className="w-full bg-telegram-blue hover:bg-telegram-blue/90">
-                  Войти
-                </Button>
-                <Button
-                  variant="outline"
-                  onClick={() => setAuthStep('phone')}
-                  className="w-full"
-                >
-                  Назад
-                </Button>
-              </>
+                {authError && (
+                  <Alert variant="destructive">
+                    <AlertDescription>{authError}</AlertDescription>
+                  </Alert>
+                )}
+                <div className="flex gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => setAuthStep('phone')}
+                    className="flex-1"
+                  >
+                    Назад
+                  </Button>
+                  <Button type="submit" className="flex-1">
+                    Войти
+                  </Button>
+                </div>
+              </form>
             )}
 
             {authStep === 'register' && (
-              <>
+              <form onSubmit={handleRegister} className="space-y-4">
                 <div>
-                  <label className={`block text-sm font-medium mb-2 ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>
-                    Имя
-                  </label>
+                  <label className="block text-sm font-medium mb-2">Username</label>
                   <Input
-                    placeholder="Ваше имя"
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
-                    className={isDarkMode ? 'bg-gray-700 border-gray-600 text-white' : ''}
-                  />
-                </div>
-                <div>
-                  <label className={`block text-sm font-medium mb-2 ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>
-                    Имя пользователя
-                  </label>
-                  <Input
-                    placeholder="username (без @)"
+                    type="text"
                     value={username}
                     onChange={(e) => setUsername(e.target.value)}
-                    className={isDarkMode ? 'bg-gray-700 border-gray-600 text-white' : ''}
+                    placeholder="your_username"
+                    className="w-full"
+                    required
                   />
                 </div>
                 <div>
-                  <label className={`block text-sm font-medium mb-2 ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>
-                    Телефон
-                  </label>
+                  <label className="block text-sm font-medium mb-2">Ваше имя</label>
                   <Input
-                    type="tel"
-                    placeholder="+71234567890"
-                    value={phone}
-                    onChange={(e) => setPhone(e.target.value)}
-                    className={isDarkMode ? 'bg-gray-700 border-gray-600 text-white' : ''}
+                    type="text"
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    placeholder="Как вас зовут?"
+                    className="w-full"
+                    required
                   />
                 </div>
                 <div>
-                  <label className={`block text-sm font-medium mb-2 ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>
-                    Пароль
-                  </label>
+                  <label className="block text-sm font-medium mb-2">Пароль</label>
                   <Input
                     type="password"
-                    placeholder="Создайте пароль (мин. 6 символов)"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
-                    className={isDarkMode ? 'bg-gray-700 border-gray-600 text-white' : ''}
+                    placeholder="Придумайте пароль"
+                    className="w-full"
+                    required
                   />
                 </div>
-                <Button onClick={handleRegister} className="w-full bg-telegram-blue hover:bg-telegram-blue/90">
-                  Зарегистрироваться
-                </Button>
-                <Button
-                  variant="outline"
-                  onClick={() => setAuthStep('phone')}
-                  className="w-full"
-                >
-                  Назад
-                </Button>
-              </>
+                {authError && (
+                  <Alert variant="destructive">
+                    <AlertDescription>{authError}</AlertDescription>
+                  </Alert>
+                )}
+                <div className="flex gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => setAuthStep('phone')}
+                    className="flex-1"
+                  >
+                    Назад
+                  </Button>
+                  <Button type="submit" className="flex-1">
+                    Зарегистрироваться
+                  </Button>
+                </div>
+              </form>
             )}
           </CardContent>
         </Card>
@@ -456,88 +361,35 @@ const Index = () => {
     );
   }
 
-  // Основной экран
+  // Основной интерфейс чата
   return (
-    <div className={`h-screen flex ${themeClasses}`}>
-      {/* Мобильная боковая панель */}
-      {isMobile && (
-        <Sheet open={showMobileSidebar} onOpenChange={setShowMobileSidebar}>
-          <SheetContent side="left" className="p-0 w-full max-w-sm">
-            <div className={`w-full h-full border-r flex flex-col ${isDarkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'}`}>
-              {/* Заголовок */}
-              <div className={`p-4 border-b ${isDarkMode ? 'border-gray-700' : 'border-gray-200'}`}>
-                <div className="flex items-center justify-between mb-4">
-                  <h1 className={`text-2xl font-bold ${isDarkMode ? 'text-white' : 'text-telegram-darkGray'}`}>
-                    Topgram
-                  </h1>
-                  <div className="flex items-center space-x-2">
-                    <Button variant="ghost" size="sm" onClick={() => setShowMobileSidebar(false)}>
-                      <Icon name="X" size={20} />
-                    </Button>
-                    <Sheet open={showSettings} onOpenChange={setShowSettings}>
-                      <SheetTrigger asChild>
-                        <Button variant="ghost" size="sm">
-                          <Icon name="Settings" size={20} />
-                        </Button>
-                      </SheetTrigger>
-                      <SheetContent side="bottom" className={isDarkMode ? 'bg-gray-800 border-gray-700' : ''}>
-                        <SheetHeader>
-                          <SheetTitle className={isDarkMode ? 'text-white' : ''}>Настройки</SheetTitle>
-                        </SheetHeader>
-                        <div className="space-y-6 mt-6">
-                          <div className={`flex items-center p-3 rounded-lg ${isDarkMode ? 'bg-gray-700' : 'bg-telegram-gray'}`}>
-                            <Avatar className="mr-3">
-                              <AvatarFallback className="bg-telegram-blue text-white">
-                                {currentUser?.name[0]}
-                              </AvatarFallback>
-                            </Avatar>
-                            <div>
-                              <h3 className={`font-medium ${isDarkMode ? 'text-white' : ''}`}>{currentUser?.name}</h3>
-                              <p className={`text-sm ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>@{currentUser?.username}</p>
-                            </div>
-                          </div>
-                          
-                          <div className="space-y-4">
-                            <div className="flex items-center justify-between">
-                              <div className="flex items-center space-x-3">
-                                <Icon name="Palette" size={16} className={isDarkMode ? 'text-gray-400' : 'text-gray-600'} />
-                                <span className={isDarkMode ? 'text-white' : ''}>Темная тема</span>
-                              </div>
-                              <Switch checked={isDarkMode} onCheckedChange={toggleTheme} />
-                            </div>
-                            
-                            <Button 
-                              variant="ghost" 
-                              className="w-full justify-start text-red-600 hover:bg-red-50"
-                              onClick={handleLogout}
-                            >
-                              <Icon name="LogOut" size={16} className="mr-3" />
-                              Выйти
-                            </Button>
-                          </div>
-                        </div>
-                      </SheetContent>
-                    </Sheet>
-                  </div>
-                </div>
-                
+    <div className={`h-screen flex ${isDarkMode ? 'dark' : ''}`}>
+      <div className="flex w-full bg-white dark:bg-gray-900">
+        {/* Боковая панель */}
+        <div className={`${isMobile ? 'hidden' : 'flex'} w-80 border-r dark:border-gray-700 flex-col`}>
+          {/* Заголовок */}
+          <div className="p-4 border-b dark:border-gray-700">
+            <div className="flex items-center justify-between">
+              <h1 className="text-xl font-bold text-gray-900 dark:text-gray-100">
+                Чаты
+              </h1>
+              <div className="flex items-center gap-2">
                 <Dialog open={showAddContact} onOpenChange={setShowAddContact}>
                   <DialogTrigger asChild>
-                    <Button className="w-full bg-telegram-blue hover:bg-telegram-blue/90">
-                      <Icon name="UserPlus" size={16} className="mr-2" />
-                      Найти пользователей
+                    <Button size="sm" variant="outline">
+                      <Icon name="UserPlus" size={16} />
                     </Button>
                   </DialogTrigger>
-                  <DialogContent className={isDarkMode ? 'bg-gray-800 border-gray-700' : ''}>
+                  <DialogContent className="max-w-md">
                     <DialogHeader>
-                      <DialogTitle className={isDarkMode ? 'text-white' : ''}>Поиск пользователей</DialogTitle>
+                      <DialogTitle>Найти пользователей</DialogTitle>
                     </DialogHeader>
                     <div className="space-y-4">
                       <Input
-                        placeholder="Поиск пользователей..."
+                        placeholder="Поиск по имени, username или номеру..."
                         value={searchQuery}
                         onChange={(e) => setSearchQuery(e.target.value)}
-                        className={isDarkMode ? 'bg-gray-700 border-gray-600 text-white' : ''}
+                        className="w-full"
                         autoFocus
                       />
                       <ScrollArea className="max-h-60">
@@ -546,439 +398,342 @@ const Index = () => {
                             <p className={`text-sm mb-3 px-2 ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>
                               {searchQuery ? `Результаты поиска (${filteredUsers.length}):` : `Все пользователи (${filteredUsers.length}):`}
                             </p>
-                            {filteredUsers.map(user => (
-                              <div key={user.id} className={`flex items-center justify-between p-2 hover:bg-gray-50 rounded transition-colors ${isDarkMode ? 'hover:bg-gray-700' : ''}`}>
-                                <div className="flex items-center">
-                                  <Avatar className="mr-3">
-                                    <AvatarFallback className="bg-telegram-lightBlue text-white">
-                                      {user.name[0]}
-                                    </AvatarFallback>
-                                  </Avatar>
-                                  <div>
-                                    <p className={`font-medium ${isDarkMode ? 'text-white' : ''}`}>{user.name}</p>
-                                    <p className={`text-sm ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>@{user.username}</p>
-                                    {user.isOnline && (
-                                      <div className="flex items-center mt-1">
-                                        <div className="w-2 h-2 bg-green-500 rounded-full mr-1"></div>
-                                        <span className={`text-xs ${isDarkMode ? 'text-green-400' : 'text-green-600'}`}>Онлайн</span>
-                                      </div>
-                                    )}
+                            {filteredUsers.map((user) => (
+                              <div
+                                key={user.id}
+                                className="flex items-center justify-between p-3 hover:bg-gray-50 dark:hover:bg-gray-800 rounded-lg cursor-pointer"
+                                onClick={() => handleStartChat(user.id)}
+                              >
+                                <div className="flex items-center gap-3">
+                                  <div className="relative">
+                                    <Avatar className="h-10 w-10">
+                                      <AvatarFallback>
+                                        {user.name.charAt(0).toUpperCase()}
+                                      </AvatarFallback>
+                                    </Avatar>
+                                    <div
+                                      className={`absolute -bottom-1 -right-1 w-3 h-3 rounded-full border-2 border-white dark:border-gray-800 ${
+                                        user.isOnline ? 'bg-green-500' : 'bg-gray-400'
+                                      }`}
+                                    />
+                                  </div>
+                                  <div className="flex-1 min-w-0">
+                                    <p className="font-medium text-gray-900 dark:text-gray-100 truncate">
+                                      {user.name}
+                                    </p>
+                                    <p className="text-sm text-gray-500 dark:text-gray-400 truncate">
+                                      @{user.username}
+                                      {!user.isOnline && user.lastSeen && (
+                                        <span className="ml-2">
+                                          {formatLastSeen(user.lastSeen)}
+                                        </span>
+                                      )}
+                                    </p>
                                   </div>
                                 </div>
-                                <Button
-                                  size="sm"
-                                  onClick={() => startChat(user)}
-                                  className="bg-telegram-blue hover:bg-telegram-blue/90 flex-shrink-0"
-                                >
-                                  Написать
+                                <Button size="sm" variant="outline">
+                                  <Icon name="MessageCircle" size={14} />
                                 </Button>
                               </div>
                             ))}
                           </div>
                         ) : (
-                          <div className="text-center py-8">
-                            <Icon name="Users" size={32} className={`mx-auto mb-2 ${isDarkMode ? 'text-gray-600' : 'text-gray-300'}`} />
-                            <p className={`${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-                              {searchQuery ? 'Пользователи не найдены' : 'Нет доступных пользователей'}
-                            </p>
+                          <div className="text-center py-8 text-gray-500 dark:text-gray-400">
+                            {searchQuery ? 'Пользователи не найдены' : 'Нет зарегистрированных пользователей'}
                           </div>
                         )}
                       </ScrollArea>
                     </div>
                   </DialogContent>
                 </Dialog>
-              </div>
-
-              {/* Список чатов */}
-              <ScrollArea className="flex-1">
-                {chats.length > 0 ? (
-                  chats.map((chat) => (
-                    <div
-                      key={chat.id}
-                      className={`flex items-center p-4 cursor-pointer transition-colors ${
-                        selectedChat === chat.id 
-                          ? isDarkMode ? 'bg-gray-700' : 'bg-telegram-gray'
-                          : isDarkMode ? 'hover:bg-gray-700' : 'hover:bg-telegram-gray'
-                      }`}
-                      onClick={() => {
-                        setSelectedChat(chat.id);
-                        setShowMobileSidebar(false);
-                      }}
-                    >
-                      <Avatar className="mr-3">
-                        <AvatarFallback className="bg-telegram-lightBlue text-white">
-                          {chat.name[0]}
-                        </AvatarFallback>
-                      </Avatar>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center justify-between">
-                          <h3 className={`font-medium truncate ${isDarkMode ? 'text-white' : 'text-telegram-darkGray'}`}>
-                            {chat.name}
-                          </h3>
-                          <span className={`text-xs ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-                            {chat.timestamp}
-                          </span>
-                        </div>
-                        <p className={`text-sm truncate ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-                          @{chat.username}
-                        </p>
-                        {chat.lastMessage && (
-                          <p className={`text-sm truncate ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-                            {chat.lastMessage}
-                          </p>
-                        )}
-                      </div>
-                      {chat.unreadCount > 0 && (
-                        <Badge className="ml-2 bg-telegram-blue text-white">
-                          {chat.unreadCount}
-                        </Badge>
-                      )}
-                    </div>
-                  ))
-                ) : (
-                  <div className={`p-8 text-center ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-                    <Icon name="MessageCircle" size={48} className={`mx-auto mb-4 ${isDarkMode ? 'text-gray-600' : 'text-gray-300'}`} />
-                    <p>Пока нет чатов</p>
-                    <p className="text-sm">Найдите пользователей, чтобы начать общение</p>
-                  </div>
-                )}
-              </ScrollArea>
-            </div>
-          </SheetContent>
-        </Sheet>
-      )}
-
-      {/* Десктопная боковая панель */}
-      {!isMobile && (
-        <div className={`w-80 border-r flex flex-col h-full ${isDarkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'}`}>
-          {/* Заголовок */}
-          <div className={`p-4 border-b ${isDarkMode ? 'border-gray-700' : 'border-gray-200'}`}>
-            <div className="flex items-center justify-between mb-4">
-              <h1 className={`text-2xl font-bold ${isDarkMode ? 'text-white' : 'text-telegram-darkGray'}`}>
-                Topgram
-              </h1>
-              <Sheet open={showSettings} onOpenChange={setShowSettings}>
-                <SheetTrigger asChild>
-                  <Button variant="ghost" size="sm">
-                    <Icon name="Settings" size={20} />
-                  </Button>
-                </SheetTrigger>
-                <SheetContent side="right" className={isDarkMode ? 'bg-gray-800 border-gray-700' : ''}>
-                  <SheetHeader>
-                    <SheetTitle className={isDarkMode ? 'text-white' : ''}>Настройки</SheetTitle>
-                  </SheetHeader>
-                  <div className="space-y-6 mt-6">
-                    <div className={`flex items-center p-3 rounded-lg ${isDarkMode ? 'bg-gray-700' : 'bg-telegram-gray'}`}>
-                      <Avatar className="mr-3">
-                        <AvatarFallback className="bg-telegram-blue text-white">
-                          {currentUser?.name[0]}
-                        </AvatarFallback>
-                      </Avatar>
-                      <div>
-                        <h3 className={`font-medium ${isDarkMode ? 'text-white' : ''}`}>{currentUser?.name}</h3>
-                        <p className={`text-sm ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>@{currentUser?.username}</p>
-                      </div>
-                    </div>
-                    
+                
+                <Dialog open={showSettings} onOpenChange={setShowSettings}>
+                  <DialogTrigger asChild>
+                    <Button size="sm" variant="outline">
+                      <Icon name="Settings" size={16} />
+                    </Button>
+                  </DialogTrigger>
+                  <DialogContent>
+                    <DialogHeader>
+                      <DialogTitle>Настройки</DialogTitle>
+                    </DialogHeader>
                     <div className="space-y-4">
                       <div className="flex items-center justify-between">
-                        <div className="flex items-center space-x-3">
-                          <Icon name="Palette" size={16} className={isDarkMode ? 'text-gray-400' : 'text-gray-600'} />
-                          <span className={isDarkMode ? 'text-white' : ''}>Темная тема</span>
-                        </div>
-                        <Switch checked={isDarkMode} onCheckedChange={toggleTheme} />
+                        <span>Темная тема</span>
+                        <Switch
+                          checked={isDarkMode}
+                          onCheckedChange={setIsDarkMode}
+                        />
                       </div>
-                      
-                      <Button 
-                        variant="ghost" 
-                        className="w-full justify-start text-red-600 hover:bg-red-50"
-                        onClick={handleLogout}
-                      >
-                        <Icon name="LogOut" size={16} className="mr-3" />
-                        Выйти
-                      </Button>
-                    </div>
-                  </div>
-                </SheetContent>
-              </Sheet>
-            </div>
-            
-            <Dialog open={showAddContact} onOpenChange={setShowAddContact}>
-              <DialogTrigger asChild>
-                <Button className="w-full bg-telegram-blue hover:bg-telegram-blue/90">
-                  <Icon name="UserPlus" size={16} className="mr-2" />
-                  Найти пользователей
-                </Button>
-              </DialogTrigger>
-              <DialogContent className={isDarkMode ? 'bg-gray-800 border-gray-700' : ''}>
-                <DialogHeader>
-                  <DialogTitle className={isDarkMode ? 'text-white' : ''}>Поиск пользователей</DialogTitle>
-                </DialogHeader>
-                <div className="space-y-4">
-                  <Input
-                    placeholder="Поиск пользователей..."
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    className={isDarkMode ? 'bg-gray-700 border-gray-600 text-white' : ''}
-                    autoFocus
-                  />
-                  <ScrollArea className="max-h-60">
-                    {filteredUsers.length > 0 ? (
-                      <div className="space-y-2">
-                        <p className={`text-sm mb-3 px-2 ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-                          {searchQuery ? `Результаты поиска:` : 'Все пользователи:'}
+                      <div className="pt-4 border-t">
+                        <p className="text-sm text-gray-600 dark:text-gray-400 mb-2">
+                          Текущий пользователь:
                         </p>
-                        {filteredUsers.map(user => (
-                          <div key={user.id} className={`flex items-center justify-between p-2 hover:bg-gray-50 rounded transition-colors ${isDarkMode ? 'hover:bg-gray-700' : ''}`}>
-                            <div className="flex items-center">
-                              <Avatar className="mr-3">
-                                <AvatarFallback className="bg-telegram-lightBlue text-white">
-                                  {user.name[0]}
-                                </AvatarFallback>
-                              </Avatar>
-                              <div>
-                                <p className={`font-medium ${isDarkMode ? 'text-white' : ''}`}>{user.name}</p>
-                                <p className={`text-sm ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>@{user.username}</p>
-                                {user.isOnline && (
-                                  <div className="flex items-center mt-1">
-                                    <div className="w-2 h-2 bg-green-500 rounded-full mr-1"></div>
-                                    <span className={`text-xs ${isDarkMode ? 'text-green-400' : 'text-green-600'}`}>Онлайн</span>
-                                  </div>
-                                )}
-                              </div>
-                            </div>
-                            <Button
-                              size="sm"
-                              onClick={() => startChat(user)}
-                              className="bg-telegram-blue hover:bg-telegram-blue/90 flex-shrink-0"
-                            >
-                              Написать
-                            </Button>
+                        <div className="flex items-center gap-3 mb-4">
+                          <Avatar>
+                            <AvatarFallback>
+                              {currentUser?.name.charAt(0).toUpperCase()}
+                            </AvatarFallback>
+                          </Avatar>
+                          <div>
+                            <p className="font-medium">{currentUser?.name}</p>
+                            <p className="text-sm text-gray-500">@{currentUser?.username}</p>
                           </div>
-                        ))}
+                        </div>
+                        <Button
+                          variant="destructive"
+                          className="w-full"
+                          onClick={handleLogout}
+                        >
+                          <Icon name="LogOut" size={16} className="mr-2" />
+                          Выйти
+                        </Button>
                       </div>
-                    ) : (
-                      <div className="text-center py-8">
-                        <Icon name="Users" size={32} className={`mx-auto mb-2 ${isDarkMode ? 'text-gray-600' : 'text-gray-300'}`} />
-                        <p className={`${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-                          {searchQuery ? 'Пользователи не найдены' : 'Нет доступных пользователей'}
-                        </p>
-                      </div>
-                    )}
-                  </ScrollArea>
-                </div>
-              </DialogContent>
-            </Dialog>
+                    </div>
+                  </DialogContent>
+                </Dialog>
+              </div>
+            </div>
           </div>
 
           {/* Список чатов */}
           <ScrollArea className="flex-1">
-            {chats.length > 0 ? (
-              chats.map((chat) => (
-                <div
-                  key={chat.id}
-                  className={`flex items-center p-4 cursor-pointer transition-colors ${
-                    selectedChat === chat.id 
-                      ? isDarkMode ? 'bg-gray-700' : 'bg-telegram-gray'
-                      : isDarkMode ? 'hover:bg-gray-700' : 'hover:bg-telegram-gray'
-                  }`}
-                  onClick={() => setSelectedChat(chat.id)}
-                >
-                  <Avatar className="mr-3">
-                    <AvatarFallback className="bg-telegram-lightBlue text-white">
-                      {chat.name[0]}
-                    </AvatarFallback>
-                  </Avatar>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center justify-between">
-                      <h3 className={`font-medium truncate ${isDarkMode ? 'text-white' : 'text-telegram-darkGray'}`}>
-                        {chat.name}
-                      </h3>
-                      <span className={`text-xs ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-                        {chat.timestamp}
-                      </span>
+            <div className="p-2">
+              {chats.length > 0 ? (
+                chats.map((chat) => {
+                  const otherUser = getOtherParticipant(chat);
+                  if (!otherUser) return null;
+                  
+                  return (
+                    <div
+                      key={chat.id}
+                      className={`flex items-center gap-3 p-3 rounded-lg cursor-pointer transition-colors ${
+                        selectedChatId === chat.id
+                          ? 'bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700'
+                          : 'hover:bg-gray-50 dark:hover:bg-gray-800'
+                      }`}
+                      onClick={() => {
+                        setSelectedChatId(chat.id);
+                        markMessagesAsRead(chat.id, currentUser?.id || '');
+                      }}
+                    >
+                      <div className="relative">
+                        <Avatar>
+                          <AvatarFallback>
+                            {otherUser.name.charAt(0).toUpperCase()}
+                          </AvatarFallback>
+                        </Avatar>
+                        <div
+                          className={`absolute -bottom-1 -right-1 w-3 h-3 rounded-full border-2 border-white dark:border-gray-800 ${
+                            otherUser.isOnline ? 'bg-green-500' : 'bg-gray-400'
+                          }`}
+                        />
+                      </div>
+                      
+                      <div className="flex-1 min-w-0">
+                        <div className="flex justify-between items-start">
+                          <p className="font-medium text-gray-900 dark:text-gray-100 truncate">
+                            {otherUser.name}
+                          </p>
+                          {chat.lastMessage && (
+                            <span className="text-xs text-gray-500 dark:text-gray-400 ml-2 flex-shrink-0">
+                              {formatTime(chat.lastMessage.timestamp)}
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex justify-between items-center">
+                          <p className="text-sm text-gray-500 dark:text-gray-400 truncate">
+                            {chat.lastMessage?.text || 'Нет сообщений'}
+                          </p>
+                          {chat.unreadCount > 0 && (
+                            <Badge className="ml-2 bg-blue-500 text-white text-xs px-2 py-1">
+                              {chat.unreadCount}
+                            </Badge>
+                          )}
+                        </div>
+                      </div>
                     </div>
-                    <p className={`text-sm truncate ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-                      @{chat.username}
-                    </p>
-                    {chat.lastMessage && (
-                      <p className={`text-sm truncate ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-                        {chat.lastMessage}
-                      </p>
-                    )}
-                  </div>
-                  {chat.unreadCount > 0 && (
-                    <Badge className="ml-2 bg-telegram-blue text-white">
-                      {chat.unreadCount}
-                    </Badge>
-                  )}
+                  );
+                })
+              ) : (
+                <div className="text-center py-8 text-gray-500 dark:text-gray-400">
+                  <Icon name="MessageCircle" size={48} className="mx-auto mb-4 opacity-50" />
+                  <p>Нет активных чатов</p>
+                  <p className="text-sm">Найдите пользователей для общения</p>
                 </div>
-              ))
-            ) : (
-              <div className={`p-8 text-center ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-                <Icon name="MessageCircle" size={48} className={`mx-auto mb-4 ${isDarkMode ? 'text-gray-600' : 'text-gray-300'}`} />
-                <p>Пока нет чатов</p>
-                <p className="text-sm">Найдите пользователей, чтобы начать общение</p>
-              </div>
-            )}
+              )}
+            </div>
           </ScrollArea>
         </div>
-      )}
-      
-      {/* Правая панель - чат */}
-      <div className="flex-1 flex flex-col">
-        {selectedChat ? (() => {
-          const chat = chats.find(c => c.id === selectedChat);
-          if (!chat) return null;
 
-          return (
+        {/* Мобильная боковая панель */}
+        {isMobile && (
+          <Sheet open={showMobileSidebar} onOpenChange={setShowMobileSidebar}>
+            <SheetContent side="left" className="w-80 p-0">
+              <div className="flex flex-col h-full">
+                <SheetHeader className="p-4 border-b">
+                  <SheetTitle>Чаты</SheetTitle>
+                </SheetHeader>
+                <div className="flex-1 overflow-hidden">
+                  {/* Здесь повторяется контент боковой панели */}
+                </div>
+              </div>
+            </SheetContent>
+          </Sheet>
+        )}
+
+        {/* Область чата */}
+        <div className="flex-1 flex flex-col">
+          {selectedChat ? (
             <>
               {/* Заголовок чата */}
-              <div className={`p-4 border-b flex items-center ${isDarkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'}`}>
-                {isMobile && (
-                  <Button 
-                    variant="ghost" 
-                    size="sm" 
-                    className="mr-3"
-                    onClick={() => setShowMobileSidebar(true)}
-                  >
-                    <Icon name="ArrowLeft" size={20} />
-                  </Button>
-                )}
-                <Avatar className="mr-3">
-                  <AvatarFallback className="bg-telegram-lightBlue text-white">
-                    {chat.name[0]}
-                  </AvatarFallback>
-                </Avatar>
-                <div className="flex-1">
-                  <h2 className={`font-medium ${isDarkMode ? 'text-white' : 'text-telegram-darkGray'}`}>
-                    {chat.name}
-                  </h2>
-                  <p className={`text-sm ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-                    @{chat.username}
-                  </p>
+              <div className="p-4 border-b dark:border-gray-700 bg-white dark:bg-gray-900">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    {isMobile && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => setShowMobileSidebar(true)}
+                      >
+                        <Icon name="Menu" size={16} />
+                      </Button>
+                    )}
+                    
+                    {(() => {
+                      const otherUser = getOtherParticipant(selectedChat);
+                      return otherUser ? (
+                        <>
+                          <div className="relative">
+                            <Avatar>
+                              <AvatarFallback>
+                                {otherUser.name.charAt(0).toUpperCase()}
+                              </AvatarFallback>
+                            </Avatar>
+                            <div
+                              className={`absolute -bottom-1 -right-1 w-3 h-3 rounded-full border-2 border-white dark:border-gray-800 ${
+                                otherUser.isOnline ? 'bg-green-500' : 'bg-gray-400'
+                              }`}
+                            />
+                          </div>
+                          <div>
+                            <h2 className="font-semibold text-gray-900 dark:text-gray-100">
+                              {otherUser.name}
+                            </h2>
+                            <p className="text-sm text-gray-500 dark:text-gray-400">
+                              {otherUser.isOnline ? (
+                                'онлайн'
+                              ) : otherUser.lastSeen ? (
+                                `был(а) ${formatLastSeen(otherUser.lastSeen)}`
+                              ) : (
+                                'не в сети'
+                              )}
+                            </p>
+                          </div>
+                        </>
+                      ) : null;
+                    })()}
+                  </div>
                 </div>
               </div>
 
               {/* Сообщения */}
-              <ScrollArea className={`flex-1 p-4 ${isDarkMode ? 'bg-gray-900' : 'bg-white'}`}>
-                {chat.messages.length > 0 ? (
-                  <div className="space-y-4">
-                    {chat.messages.map((message) => (
-                      <div
-                        key={message.id}
-                        className={`flex ${message.isOwn ? 'justify-end' : 'justify-start'}`}
-                      >
+              <ScrollArea className="flex-1 p-4">
+                <div className="space-y-4">
+                  {selectedChat.messages.length > 0 ? (
+                    selectedChat.messages.map((message) => {
+                      const isOwn = message.senderId === currentUser?.id;
+                      const sender = findUserById(message.senderId);
+                      
+                      return (
                         <div
-                          className={`max-w-xs lg:max-w-md px-4 py-2 rounded-2xl ${
-                            message.isOwn
-                              ? 'bg-telegram-blue text-white'
-                              : isDarkMode ? 'bg-gray-700 text-white' : 'bg-telegram-gray text-telegram-darkGray'
-                          }`}
+                          key={message.id}
+                          className={`flex ${isOwn ? 'justify-end' : 'justify-start'}`}
                         >
-                          {message.type === 'image' && message.fileUrl && (
-                            <img
-                              src={message.fileUrl}
-                              alt="Изображение"
-                              className="max-w-full h-auto rounded-lg mb-2"
-                            />
-                          )}
-                          {message.type === 'file' && (
-                            <div className="flex items-center mb-2">
-                              <Icon name="FileText" size={16} className="mr-2" />
-                              <span className="text-sm">{message.fileName}</span>
-                            </div>
-                          )}
-                          {message.text && (
-                            <p className="text-sm">{message.text}</p>
-                          )}
-                          <p className={`text-xs mt-1 ${
-                            message.isOwn ? 'text-blue-100' : isDarkMode ? 'text-gray-400' : 'text-gray-500'
-                          }`}>
-                            {message.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                          </p>
+                          <div
+                            className={`max-w-xs lg:max-w-md px-4 py-2 rounded-lg ${
+                              isOwn
+                                ? 'bg-blue-500 text-white'
+                                : 'bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-gray-100'
+                            }`}
+                          >
+                            <p className="break-words">{message.text}</p>
+                            <p
+                              className={`text-xs mt-1 ${
+                                isOwn ? 'text-blue-100' : 'text-gray-500 dark:text-gray-400'
+                              }`}
+                            >
+                              {formatTime(message.timestamp)}
+                            </p>
+                          </div>
                         </div>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div className={`flex items-center justify-center h-full ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-                    <div className="text-center">
-                      <Icon name="MessageCircle" size={48} className={`mx-auto mb-4 ${isDarkMode ? 'text-gray-600' : 'text-gray-300'}`} />
-                      <p>Начните беседу!</p>
+                      );
+                    })
+                  ) : (
+                    <div className="text-center py-8 text-gray-500 dark:text-gray-400">
+                      <Icon name="MessageCircle" size={48} className="mx-auto mb-4 opacity-50" />
+                      <p>Начните диалог</p>
                       <p className="text-sm">Отправьте первое сообщение</p>
                     </div>
-                  </div>
-                )}
+                  )}
+                </div>
               </ScrollArea>
 
-              {/* Поле ввода */}
-              <div className={`p-4 border-t ${isDarkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'}`}>
-                <div className="flex items-center space-x-3">
+              {/* Ввод сообщения */}
+              <div className="p-4 border-t dark:border-gray-700 bg-white dark:bg-gray-900">
+                <form onSubmit={handleSendMessage} className="flex gap-2">
+                  <Input
+                    value={messageText}
+                    onChange={(e) => setMessageText(e.target.value)}
+                    placeholder="Введите сообщение..."
+                    className="flex-1"
+                    maxLength={1000}
+                  />
                   <input
                     type="file"
                     ref={fileInputRef}
-                    onChange={handleFileUpload}
+                    onChange={() => {/* файлы пока не поддерживаются */}}
+                    accept="image/*,video/*,.pdf,.doc,.docx"
                     className="hidden"
-                    accept="image/*,*"
                   />
                   <Button
-                    variant="ghost"
+                    type="button"
                     size="sm"
+                    variant="outline"
                     onClick={() => fileInputRef.current?.click()}
                   >
-                    <Icon name="Paperclip" size={18} />
+                    <Icon name="Paperclip" size={16} />
                   </Button>
-                  <Input
-                    placeholder="Введите сообщение..."
-                    value={messageText}
-                    onChange={(e) => setMessageText(e.target.value)}
-                    onKeyPress={handleKeyPress}
-                    className={`flex-1 ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white' : ''}`}
-                  />
-                  <Button
-                    onClick={sendMessage}
-                    size="sm"
-                    className="bg-telegram-blue hover:bg-telegram-blue/90"
-                    disabled={!messageText.trim()}
-                  >
-                    <Icon name="Send" size={18} />
+                  <Button type="submit" size="sm" disabled={!messageText.trim()}>
+                    <Icon name="Send" size={16} />
                   </Button>
-                </div>
+                </form>
               </div>
             </>
-          );
-        })() : (
-          <div className={`flex-1 flex flex-col items-center justify-center p-4 ${isDarkMode ? 'bg-gray-900' : 'bg-telegram-gray/20'}`}>
-            {isMobile && (
-              <Button 
-                onClick={() => setShowMobileSidebar(true)}
-                className="mb-6 bg-telegram-blue hover:bg-telegram-blue/90"
-              >
-                <Icon name="Menu" size={16} className="mr-2" />
-                Открыть чаты
-              </Button>
-            )}
-            <div className="text-center">
-              <div className={`mb-4 w-24 h-24 rounded-full flex items-center justify-center mx-auto ${isDarkMode ? 'bg-gray-700' : 'bg-telegram-lightBlue/20'}`}>
-                <Icon name="MessageCircle" size={48} className="text-telegram-blue" />
+          ) : (
+            // Экран приветствия
+            <div className="flex-1 flex items-center justify-center bg-gray-50 dark:bg-gray-800">
+              <div className="text-center">
+                {isMobile && (
+                  <Button
+                    className="mb-4"
+                    onClick={() => setShowMobileSidebar(true)}
+                  >
+                    <Icon name="Menu" size={16} className="mr-2" />
+                    Открыть чаты
+                  </Button>
+                )}
+                <Icon name="MessageCircle" size={64} className="mx-auto mb-4 text-gray-400" />
+                <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100 mb-2">
+                  Добро пожаловать в Realtime Chat
+                </h2>
+                <p className="text-gray-500 dark:text-gray-400">
+                  Выберите чат или найдите пользователей для общения
+                </p>
               </div>
-              <h2 className={`text-xl font-semibold mb-2 ${isDarkMode ? 'text-white' : 'text-telegram-darkGray'}`}>
-                Добро пожаловать в Topgram!
-              </h2>
-              <p className={`mb-4 ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-                Найдите пользователей и начните общение
-              </p>
-              <Button
-                onClick={() => setShowAddContact(true)}
-                className="bg-telegram-blue hover:bg-telegram-blue/90"
-              >
-                <Icon name="UserPlus" size={16} className="mr-2" />
-                Найти пользователей
-              </Button>
             </div>
-          </div>
-        )}
+          )}
+        </div>
       </div>
     </div>
   );
