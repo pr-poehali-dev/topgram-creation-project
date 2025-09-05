@@ -56,14 +56,10 @@ export const useRealtimeStore = create<RealtimeStore>()(
     chats: [],
     
     // Пользователи
-    addUser: (user) => {
-      console.log('Добавляю пользователя:', user);
-      set((state) => {
-        const newUsers = [...state.users.filter(u => u.id !== user.id), user];
-        console.log('Всего пользователей в сторе:', newUsers.length);
-        return { users: newUsers };
-      });
-    },
+    addUser: (user) =>
+      set((state) => ({
+        users: [...state.users.filter(u => u.id !== user.id), user]
+      })),
     
     setCurrentUser: (user) =>
       set({ currentUser: user }),

@@ -203,10 +203,7 @@ const Index = () => {
       user.phone.includes(query)
     );
     
-    // Отладочная информация
-    if (searchQuery) {
-      console.log(`Поиск "${query}": пользователь ${user.username} (${user.name}) - ${matches ? 'найден' : 'не найден'}`);
-    }
+
     
     return matches;
   });
@@ -408,7 +405,7 @@ const Index = () => {
                           <p className={`text-sm mb-3 px-2 ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>
                             {searchQuery ? `Поиск "${searchQuery}" (${filteredUsers.length} из ${users.length}):` : `Все пользователи (${filteredUsers.length} из ${users.length}):`}
                           </p>
-                        {filteredUsers.length > 0 ? (
+                          {filteredUsers.length > 0 ? (
                           <div className="space-y-2">
                             {filteredUsers.map((user) => (
                               <div
@@ -454,6 +451,7 @@ const Index = () => {
                             {searchQuery ? 'Пользователи не найдены' : 'Нет зарегистрированных пользователей'}
                           </div>
                         )}
+                        </div>
                       </ScrollArea>
                     </div>
                   </DialogContent>
